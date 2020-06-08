@@ -1,10 +1,8 @@
 [package]
-name = "secret-reshare"
+name = "threshold"
 version = "0.1.0"
 authors = ["Dmitry Shuranov <dvshur@gmail.com>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 curve25519-dalek = "2"

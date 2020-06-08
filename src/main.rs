@@ -1,8 +1,10 @@
 mod polynom;
 mod pow;
+mod secret;
 
 use curve25519_dalek::scalar::Scalar;
 use polynom::Polynom;
+use secret::Secret;
 use std::convert::TryInto;
 
 // Secret sharing parameters
@@ -111,33 +113,4 @@ fn shamir_reconstruct(xs: &[Scalar; T], shares: &[Scalar; T]) -> Scalar {
     }
 
     res
-}
-
-fn to_canonical_bytes(s: &str) -> Option<[u8; 32]> {
-    let mut res = [0u8; 32];
-
-    let bytes = s.as_bytes();
-
-    if bytes.len() > 32 {
-        return None;
-    }
-
-    for (i, b) in bytes.iter().enumerate() {
-        res[i] = b.clone();
-    }
-
-    Some(res)
-}
-
-fn from_canonical_bytes(bytes: &[u8; 32]) -> Option<String> {
-    let s2 = bytes
-        .iter()
-        .take_while(|b| **b != 0u8)
-        .map(|b| b.clone())
-        .collect::<Vec<_>>();
-
-    match String::from_utf8(s2) {
-        Ok(s) => Some(s),
-        Err(_) => None,
-    }
 }
