@@ -17,20 +17,11 @@ use std::convert::TryInto;
 // Parties number
 const N: usize = 5;
 // Threshold
-const T: usize = 1;
+const T: usize = 3;
 
 #[allow(non_snake_case)]
 fn main() {
-    // key pair to split
     let mut csprng = rand::thread_rng();
-
-    let rnd_scalar = Scalar::random(&mut csprng);
-    let secret_key = SecretKey::from_bytes(rnd_scalar.as_bytes()).unwrap();
-    let public_key = PublicKey::from(&secret_key);
-    let key_pair = Keypair {
-        secret: secret_key,
-        public: public_key,
-    };
 
     // Parties indexes
     let xs: [Scalar; N] = [
@@ -41,17 +32,20 @@ fn main() {
         Scalar::from(5u8),
     ];
 
-    let secret = Scalar::from_bytes_mod_order(key_pair.secret.to_bytes());
+    // key pair to split
+    let rnd_scalar = Scalar::random(&mut csprng);
+    let secret_key = SecretKey::from_bytes(rnd_scalar.as_bytes()).unwrap();
+    let public_key = PublicKey::from(&secret_key);
+    let key_pair = Keypair {
+        secret: secret_key,
+        public: public_key,
+    };
 
-    assert!(secret.as_bytes() == key_pair.secret.as_bytes());
+    // change some bytes in a given key before sharing it
+    let (secret, nonce) = expanded_secret_key(key_pair.secret.as_bytes());
 
     // KEY SHARES
     let shares = shamir_share(&xs, &secret);
-
-    for share in &shares {
-        assert!(*share == secret);
-        assert!(share.as_bytes() == key_pair.secret.as_bytes());
-    }
 
     // SIGN
     let message: &[u8] = b"Hello, world";
@@ -60,28 +54,17 @@ fn main() {
     let signers: &[Scalar; T] = &xs[0..T].try_into().expect("fatal error");
     let signers_shares: &[Scalar; T] = &shares[0..T].try_into().expect("fatal error");
 
-    assert!(signers.len() == 1);
-
-    // make expanded secret keys out of shares
-    let exp_secret_keys: [(Scalar, [u8; 32]); T] = {
-        let mut res = [(Scalar::zero(), [0u8; 32]); T];
-        for i in 0..T {
-            // todo should I make it out of share, or apply lagrange coeff first?
-            res[i] = expanded_secret_key(&signers_shares[i].as_bytes());
-        }
-        res
-    };
-
-    assert!(exp_secret_keys.len() == 1);
-    assert!(exp_secret_keys[0].0 != shares[0]);
+    // lagrange coefficients
+    let lagrange_coeffs = lagrange_coeffs_at_zero(signers);
 
     // generate ri
     let rs: [Scalar; T] = {
         let mut res = [Scalar::zero(); T];
         for i in 0..T {
+            // todo make it actually random
             let mut h = Sha512::new();
 
-            h.input(&exp_secret_keys[i].1);
+            h.input(&nonce);
             h.input(&message);
 
             res[i] = Scalar::from_hash(h.clone());
@@ -104,8 +87,6 @@ fn main() {
         R.compress()
     };
 
-    assert!(Rs[0].compress() == R);
-
     // calculate k
     let k = {
         let mut h = Sha512::new();
@@ -115,15 +96,10 @@ fn main() {
         Scalar::from_hash(h)
     };
 
-    // lagrange coefficients
-    let lagrange_coeffs = lagrange_coeffs_at_zero(signers);
-
-    assert!(lagrange_coeffs[0] == Scalar::one());
-
     let ss: [Scalar; T] = {
         let mut res = [Scalar::zero(); T];
         for i in 0..T {
-            res[i] = &(&k * &exp_secret_keys[i].0) + &rs[i]; // * &lagrange_coeffs[i];
+            res[i] = &(&shares[i] * &lagrange_coeffs[i] * &k) + &rs[i];
         }
         res
     };
@@ -131,8 +107,6 @@ fn main() {
     let s: Scalar = ss.iter().sum();
 
     // println!("r: {:?}, R: {:?}, k: {:?}, s: {:?}", rs[0], Rs[0], k, ss[0]);
-
-    assert!(s == ss[0]);
 
     let sig_bytes = [R.to_bytes(), s.to_bytes()].concat();
 
